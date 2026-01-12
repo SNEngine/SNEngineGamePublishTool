@@ -1,12 +1,14 @@
 import sys
 import json
 import pickle
+import os
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget,
     QFileDialog, QMessageBox, QListWidget, QHBoxLayout, QDialog,
     QLabel, QLineEdit, QTextEdit, QFormLayout, QComboBox, QListWidgetItem,
     QListWidget, QAbstractItemView, QScrollArea, QCheckBox
 )
+from PyQt5.QtGui import QFontDatabase
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QPixmap, QIcon
 
@@ -61,6 +63,7 @@ class PlatformIconWidget(QWidget):
                 font-weight: bold;
                 font-size: 14px;
                 background: transparent;
+                font-family: 'Roboto';
             }}
         """)
         info_layout.addWidget(title_label)
@@ -112,6 +115,7 @@ class PlatformIconWidget(QWidget):
                         font-size: 12px;
                         background: transparent;
                         padding: 2px 4px;
+                        font-family: 'Roboto';
                     }
                 """)
                 platforms_layout.addWidget(platform_label)
@@ -125,16 +129,20 @@ class PlatformIconWidget(QWidget):
 
 
 class GameListWindow(QMainWindow):
-    def __init__(self, games, file_path):
+    def __init__(self, games=None, file_path=None):
         super().__init__()
-        self.games = games
-        self.file_path = file_path
+        self.games = games if games is not None else []
+        self.file_path = file_path if file_path is not None else ""
+
+        # Save to session if a file path is provided
+        if self.file_path:
+            set_last_opened_file(self.file_path)
         # Применяем темные стили, совместимые с Qt5
         self.setStyleSheet("""
             QMainWindow {
                 background-color: #1e1e1e;
                 color: #ddd;
-                font-family: 'Roboto', Arial, sans-serif;
+                font-family: 'Roboto';
             }
 
             QPushButton {
@@ -145,7 +153,7 @@ class GameListWindow(QMainWindow):
                 font-size: 16px;
                 border-radius: 6px;
                 font-weight: 600;
-                font-family: 'Roboto', Arial, sans-serif;
+                font-family: 'Roboto';
             }
 
             QPushButton:hover {
@@ -163,7 +171,7 @@ class GameListWindow(QMainWindow):
             QListWidget::item {
                 padding: 8px;
                 border-bottom: 1px solid #444;
-                font-family: 'Roboto', Arial, sans-serif;
+                font-family: 'Roboto';
             }
 
             QListWidget::item:selected {
@@ -177,11 +185,11 @@ class GameListWindow(QMainWindow):
                 border: 1px solid #444;
                 border-radius: 6px;
                 padding: 8px;
-                font-family: 'Roboto', Arial, sans-serif;
+                font-family: 'Roboto';
             }
 
             QLabel {
-                font-family: 'Roboto', Arial, sans-serif;
+                font-family: 'Roboto';
                 color: #ddd;
             }
 
@@ -200,6 +208,12 @@ class GameListWindow(QMainWindow):
             icon_path = os.path.join(sys._MEIPASS, 'icon.png')
             if os.path.exists(icon_path):
                 self.setWindowIcon(QIcon(icon_path))
+            else:
+                # Если иконка не найдена в ресурсах EXE, пробуем найти рядом с EXE
+                exe_dir = os.path.dirname(sys.executable)
+                fallback_icon_path = os.path.join(exe_dir, 'icon.png')
+                if os.path.exists(fallback_icon_path):
+                    self.setWindowIcon(QIcon(fallback_icon_path))
         else:
             # Если приложение запущено из исходного кода
             if os.path.exists("icon.png"):
@@ -208,9 +222,18 @@ class GameListWindow(QMainWindow):
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle(f"Games List - {self.file_path}")
-        self.setGeometry(200, 200, 1000, 700)
-        self.center_window()
+        title = f"Games List - {self.file_path}" if self.file_path else "Games List"
+        self.setWindowTitle(title)
+
+        # Проверяем, была ли уже восстановлена геометрия из сессии
+        session_data = get_session_data()
+        if 'window_geometry' in session_data:
+            # Если геометрия была сохранена в сессии, восстанавливаем её
+            self.restore_window_state()
+        else:
+            # Если геометрия не была восстановлена, устанавливаем стандартные размеры
+            self.setGeometry(200, 200, 1000, 700)
+            self.center_window()
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -235,7 +258,7 @@ class GameListWindow(QMainWindow):
         left_title.setStyleSheet("""
             QLabel {
                 color: #d60000;
-                font-family: 'Roboto', Arial, sans-serif;
+                font-family: 'Roboto';
                 padding: 10px;
                 border-bottom: 1px solid rgba(214, 0, 0, 0.2);
             }
@@ -267,9 +290,13 @@ class GameListWindow(QMainWindow):
         import_btn.clicked.connect(self.import_game)
         button_layout.addWidget(import_btn)
 
-        export_json_btn = QPushButton("Export JSON")
-        export_json_btn.clicked.connect(self.export_games_json)
-        button_layout.addWidget(export_json_btn)
+        export_games_btn = QPushButton("Export Games")
+        export_games_btn.clicked.connect(self.export_games_json)
+        button_layout.addWidget(export_games_btn)
+
+        import_games_btn = QPushButton("Import Games")
+        import_games_btn.clicked.connect(self.import_games_json)
+        button_layout.addWidget(import_games_btn)
 
         left_layout.addLayout(button_layout)
         left_sidebar.setLayout(left_layout)
@@ -290,7 +317,7 @@ class GameListWindow(QMainWindow):
             QLabel {
                 color: #aaa;
                 font-size: 14px;
-                font-family: 'Roboto', Arial, sans-serif;
+                font-family: 'Roboto';
             }
         """)
         right_layout.addWidget(self.details_label)
@@ -316,12 +343,14 @@ class GameListWindow(QMainWindow):
         if current_row >= 0 and current_row < len(self.games):
             game = self.games[current_row]
             self.show_game_details(game)
+        else:
+            # If no valid game is selected, clear the details panel
+            self.clear_details_panel()
 
     def show_game_details(self, game):
         """Display detailed information about the selected game"""
         # Clear the right panel
-        for i in reversed(range(self.right_panel.layout().count())):
-            self.right_panel.layout().itemAt(i).widget().setParent(None)
+        self.clear_details_panel()
 
         # Create a scroll area for the details
         scroll_area = QScrollArea()
@@ -345,7 +374,7 @@ class GameListWindow(QMainWindow):
                 color: #ddd;
                 font-size: 18px;
                 font-weight: bold;
-                font-family: 'Roboto', Arial, sans-serif;
+                font-family: 'Roboto';
                 margin: 5px;
             }
         """)
@@ -362,7 +391,7 @@ class GameListWindow(QMainWindow):
                     color: #2ecc71;
                     font-size: 14px;
                     font-weight: bold;
-                    font-family: 'Roboto', Arial, sans-serif;
+                    font-family: 'Roboto';
                     margin: 3px 5px;
                 }
             """
@@ -372,7 +401,7 @@ class GameListWindow(QMainWindow):
                     color: #3498db;
                     font-size: 14px;
                     font-weight: bold;
-                    font-family: 'Roboto', Arial, sans-serif;
+                    font-family: 'Roboto';
                     margin: 3px 5px;
                 }
             """
@@ -382,7 +411,7 @@ class GameListWindow(QMainWindow):
                     color: #f1c40f;
                     font-size: 14px;
                     font-weight: bold;
-                    font-family: 'Roboto', Arial, sans-serif;
+                    font-family: 'Roboto';
                     margin: 3px 5px;
                 }
             """
@@ -392,7 +421,7 @@ class GameListWindow(QMainWindow):
                     color: #9b59b6;
                     font-size: 14px;
                     font-weight: bold;
-                    font-family: 'Roboto', Arial, sans-serif;
+                    font-family: 'Roboto';
                     margin: 3px 5px;
                 }
             """
@@ -402,7 +431,7 @@ class GameListWindow(QMainWindow):
                     color: #e74c3c;
                     font-size: 14px;
                     font-weight: bold;
-                    font-family: 'Roboto', Arial, sans-serif;
+                    font-family: 'Roboto';
                     margin: 3px 5px;
                 }
             """
@@ -412,7 +441,7 @@ class GameListWindow(QMainWindow):
                     color: #f39c12;
                     font-size: 14px;
                     font-weight: bold;
-                    font-family: 'Roboto', Arial, sans-serif;
+                    font-family: 'Roboto';
                     margin: 3px 5px;
                 }
             """
@@ -422,7 +451,7 @@ class GameListWindow(QMainWindow):
                     color: #aaa;
                     font-size: 14px;
                     font-weight: bold;
-                    font-family: 'Roboto', Arial, sans-serif;
+                    font-family: 'Roboto';
                     margin: 3px 5px;
                 }
             """
@@ -439,7 +468,7 @@ class GameListWindow(QMainWindow):
                 QLabel {
                     color: #ddd;
                     font-size: 14px;
-                    font-family: 'Roboto', Arial, sans-serif;
+                    font-family: 'Roboto';
                     margin: 5px;
                 }
             """)
@@ -484,7 +513,7 @@ class GameListWindow(QMainWindow):
                         QLabel {
                             color: #aaa;
                             font-size: 12px;
-                            font-family: 'Roboto', Arial, sans-serif;
+                            font-family: 'Roboto';
                             margin: 5px;
                         }
                     """)
@@ -497,7 +526,7 @@ class GameListWindow(QMainWindow):
                     QLabel {
                         color: #aaa;
                         font-size: 12px;
-                        font-family: 'Roboto', Arial, sans-serif;
+                        font-family: 'Roboto';
                         margin: 5px;
                     }
                 """)
@@ -509,6 +538,45 @@ class GameListWindow(QMainWindow):
 
         # Add the scroll area to the right panel
         self.right_panel.layout().addWidget(scroll_area)
+
+    def clear_details_panel(self):
+        """Clear the details panel and show the placeholder message"""
+        # Check if right_panel exists before trying to access it
+        if hasattr(self, 'right_panel') and self.right_panel.layout():
+            # Clear the right panel
+            for i in reversed(range(self.right_panel.layout().count())):
+                self.right_panel.layout().itemAt(i).widget().setParent(None)
+
+            # Add the placeholder label back
+            self.details_label = QLabel("Select a game to view details")
+            self.details_label.setAlignment(Qt.AlignCenter)
+            self.details_label.setStyleSheet("""
+                QLabel {
+                    color: #aaa;
+                    font-size: 14px;
+                    font-family: 'Roboto';
+                }
+            """)
+            self.right_panel.layout().addWidget(self.details_label)
+
+    def restore_window_state(self):
+        """Restore window geometry from session"""
+        session_data = get_session_data()
+        if 'window_geometry' in session_data:
+            try:
+                geometry = session_data['window_geometry']
+                if isinstance(geometry, list):
+                    # Convert list back to bytes
+                    geometry_bytes = bytes(geometry)
+                    self.restoreGeometry(geometry_bytes)
+            except Exception as e:
+                print(f"Could not restore window geometry: {str(e)}")
+
+    def save_window_state(self):
+        """Save window geometry to session"""
+        session_data = get_session_data()
+        session_data['window_geometry'] = list(self.saveGeometry().data())
+        set_session_data(session_data)
 
     def populate_games_list(self):
         self.games_list.clear()
@@ -525,6 +593,15 @@ class GameListWindow(QMainWindow):
             # Добавляем виджет в список
             self.games_list.addItem(item)
             self.games_list.setItemWidget(item, widget)
+
+        # Если список игр пуст, очистить панель деталей (только если right_panel уже существует)
+        if not self.games and hasattr(self, 'right_panel'):
+            self.clear_details_panel()
+
+    def closeEvent(self, event):
+        """Save window state before closing"""
+        self.save_window_state()
+        event.accept()
 
     def add_game(self):
         dialog = GameEditDialog(parent=self)
@@ -573,6 +650,8 @@ class GameListWindow(QMainWindow):
             del self.games[current_row]
             self.save_games()
             self.populate_games_list()
+            # Clear the details panel after deletion
+            self.clear_details_panel()
 
     def import_game(self):
         """Import a game from a binary file"""
@@ -601,25 +680,109 @@ class GameListWindow(QMainWindow):
                 QMessageBox.critical(self, "Error", f"Failed to import game data:\n{str(e)}")
 
     def export_games_json(self):
-        """Export all games to a JSON file"""
+        """Export all games to a file"""
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Export Games JSON", "games.json", "JSON Files (*.json);;All Files (*)"
+            self, "Export Games", self.file_path or "games.json", "Game Files (*.json);;All Files (*)"
         )
 
         if file_path:
             try:
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(self.games, f, ensure_ascii=False, indent=2)
-                QMessageBox.information(self, "Success", "Games exported to JSON successfully!")
+
+                # If we exported to the current file, update the window title and session
+                if file_path == self.file_path:
+                    self.update_window_title()
+                    set_last_opened_file(self.file_path)
+
+                QMessageBox.information(self, "Success", "Games exported successfully!")
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to export games to JSON:\n{str(e)}")
+                QMessageBox.critical(self, "Error", f"Failed to export games:\n{str(e)}")
+
+    def import_games_json(self):
+        """Import games from a file"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Import Games", "", "Game Files (*.json);;All Files (*)"
+        )
+
+        if file_path:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    imported_games = json.load(f)
+
+                # Validate that the imported data is a list of games
+                if not isinstance(imported_games, list):
+                    raise ValueError("JSON file must contain an array of games")
+
+                # If the current list is empty, just replace without asking
+                if not self.games:
+                    # Replace the games
+                    self.games = imported_games
+                    self.file_path = file_path
+                    self.update_window_title()  # Update window title when replacing
+                    set_last_opened_file(self.file_path)  # Save to session when replacing
+                else:
+                    # Ask user if they want to merge or replace
+                    reply = QMessageBox.question(
+                        self, "Import Option",
+                        "Do you want to merge the imported games with the current list?\n(Select No to replace current games)",
+                        QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
+                    )
+
+                    if reply == QMessageBox.Yes:
+                        # Merge the games
+                        # Generate new IDs for imported games to avoid conflicts
+                        max_id = max([g.get('id', 0) for g in self.games])
+
+                        for game in imported_games:
+                            max_id += 1
+                            game['id'] = max_id
+
+                        self.games.extend(imported_games)
+                    elif reply == QMessageBox.No:
+                        # Replace the games
+                        self.games = imported_games
+                        self.file_path = file_path
+                        self.update_window_title()  # Update window title when replacing
+                        set_last_opened_file(self.file_path)  # Save to session when replacing
+                    elif reply == QMessageBox.Cancel:
+                        return
+
+                self.save_games()
+                self.populate_games_list()
+                QMessageBox.information(self, "Success", f"Successfully imported {len(imported_games)} games!")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to import games:\n{str(e)}")
 
     def save_games(self):
         try:
+            if not self.file_path:
+                # If no file path is set, ask user to save as new file
+                file_path, _ = QFileDialog.getSaveFileName(
+                    self, "Save Games", "games.json", "Game Files (*.json);;All Files (*)"
+                )
+
+                if file_path:
+                    self.file_path = file_path
+                else:
+                    # User cancelled, don't save
+                    return
+
             with open(self.file_path, 'w', encoding='utf-8') as f:
                 json.dump(self.games, f, ensure_ascii=False, indent=2)
+
+            # Update window title after saving
+            self.update_window_title()
+
+            # Save to session
+            set_last_opened_file(self.file_path)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save file:\n{str(e)}")
+
+    def update_window_title(self):
+        """Update the window title to reflect the current file path"""
+        title = f"Games List - {self.file_path}" if self.file_path else "Games List"
+        self.setWindowTitle(title)
 
 
 class PlatformSelector(QWidget):
@@ -660,7 +823,7 @@ class GameEditDialog(QDialog):
             QDialog {
                 background-color: #1e1e1e;
                 color: #ddd;
-                font-family: 'Roboto', Arial, sans-serif;
+                font-family: 'Roboto';
             }
 
             QLineEdit, QTextEdit, QComboBox {
@@ -669,17 +832,17 @@ class GameEditDialog(QDialog):
                 border: 1px solid #444;
                 border-radius: 6px;
                 padding: 8px;
-                font-family: 'Roboto', Arial, sans-serif;
+                font-family: 'Roboto';
             }
 
             QLabel {
                 color: #ddd;
-                font-family: 'Roboto', Arial, sans-serif;
+                font-family: 'Roboto';
             }
 
             QCheckBox {
                 color: #ddd;
-                font-family: 'Roboto', Arial, sans-serif;
+                font-family: 'Roboto';
             }
 
             QScrollArea {
@@ -710,6 +873,12 @@ class GameEditDialog(QDialog):
             icon_path = os.path.join(sys._MEIPASS, 'icon.png')
             if os.path.exists(icon_path):
                 self.setWindowIcon(QIcon(icon_path))
+            else:
+                # Если иконка не найдена в ресурсах EXE, пробуем найти рядом с EXE
+                exe_dir = os.path.dirname(sys.executable)
+                fallback_icon_path = os.path.join(exe_dir, 'icon.png')
+                if os.path.exists(fallback_icon_path):
+                    self.setWindowIcon(QIcon(fallback_icon_path))
         else:
             # Если приложение запущено из исходного кода
             if os.path.exists("icon.png"):
@@ -842,11 +1011,18 @@ class GameEditDialog(QDialog):
             # Пытаемся получить относительный путь от директории JSON файла
             try:
                 import os
-                json_dir = os.path.dirname(self.parent().file_path)  # Получаем директорию JSON файла
-                relative_path = os.path.relpath(file_path, json_dir)
-                # Заменяем обратные слэши на прямые для JSON
-                relative_path = relative_path.replace('\\', '/')
-                self.preview_input.setText(relative_path)
+                parent_window = self.parent()
+                if hasattr(parent_window, 'file_path') and parent_window.file_path:
+                    json_dir = os.path.dirname(parent_window.file_path)  # Получаем директорию JSON файла
+                    relative_path = os.path.relpath(file_path, json_dir)
+                    # Заменяем обратные слэши на прямые для JSON
+                    relative_path = relative_path.replace('\\', '/')
+                    self.preview_input.setText(relative_path)
+                else:
+                    # Если у родительского окна нет пути к файлу, используем абсолютный путь
+                    # Заменяем обратные слэши на прямые для JSON
+                    file_path = file_path.replace('\\', '/')
+                    self.preview_input.setText(file_path)
             except:
                 # Если не удалось получить относительный путь, используем абсолютный
                 # Заменяем обратные слэши на прямые для JSON
@@ -887,8 +1063,31 @@ class GameEditDialog(QDialog):
         }
 
 
+def load_fonts():
+    """Load custom fonts from the fonts directory"""
+    try:
+        # Define the fonts directory path
+        if getattr(sys, 'frozen', False):
+            # If running as compiled executable
+            fonts_dir = os.path.join(sys._MEIPASS, 'fonts')
+        else:
+            # If running from source
+            fonts_dir = os.path.join(os.getcwd(), 'fonts')
+
+        if os.path.exists(fonts_dir):
+            for font_file in os.listdir(fonts_dir):
+                if font_file.lower().endswith(('.ttf', '.otf')):
+                    font_path = os.path.join(fonts_dir, font_file)
+                    QFontDatabase.addApplicationFont(font_path)
+    except Exception as e:
+        print(f"Could not load fonts: {str(e)}")
+
+
 def main():
     app = QApplication(sys.argv)
+
+    # Load custom fonts
+    load_fonts()
 
     # Устанавливаем атрибуты приложения для правильного отображения иконки на панели задач в Windows
     if sys.platform == 'win32':  # Только для Windows
@@ -896,9 +1095,77 @@ def main():
         myappid = 'com.snengine.gamepublisher.1.0'  # arbitrary string
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
-    window = GameListWindow([], "games.json")
+    # Try to load the last opened file from session
+    last_file_path = get_last_opened_file()
+
+    if last_file_path and os.path.exists(last_file_path):
+        try:
+            with open(last_file_path, 'r', encoding='utf-8') as f:
+                games = json.load(f)
+
+            window = GameListWindow(games, last_file_path)
+        except Exception as e:
+            QMessageBox.critical(None, "Error", f"Failed to load last file:\n{str(e)}")
+            # Start with empty list if file loading fails
+            window = GameListWindow([], "")
+    else:
+        # Start with empty list if no last file or it doesn't exist
+        window = GameListWindow([], "")
+
     window.show()
     sys.exit(app.exec_())
+
+
+def get_session_file_path():
+    """Get the path to the session file"""
+    # If running as compiled executable, store session next to the EXE
+    if getattr(sys, 'frozen', False):
+        # If running as compiled executable
+        exe_dir = os.path.dirname(sys.executable)
+        session_dir = exe_dir
+    else:
+        # If running from source, store in current directory
+        session_dir = os.getcwd()
+
+    # Create directory if it doesn't exist
+    os.makedirs(session_dir, exist_ok=True)
+
+    return os.path.join(session_dir, 'session.json')
+
+
+def get_session_data():
+    """Get the session data from file"""
+    session_file = get_session_file_path()
+    if os.path.exists(session_file):
+        try:
+            with open(session_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+
+def set_session_data(session_data):
+    """Set the session data to file"""
+    session_file = get_session_file_path()
+    try:
+        with open(session_file, 'w', encoding='utf-8') as f:
+            json.dump(session_data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Failed to save session: {str(e)}")  # Just print error, don't interrupt user
+
+
+def get_last_opened_file():
+    """Get the last opened file path from session"""
+    session_data = get_session_data()
+    return session_data.get('last_opened_file', '')
+
+
+def set_last_opened_file(file_path):
+    """Set the last opened file path in session"""
+    session_data = get_session_data()
+    session_data['last_opened_file'] = file_path
+    set_session_data(session_data)
 
 
 if __name__ == "__main__":

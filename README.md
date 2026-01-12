@@ -1,12 +1,12 @@
 # SNEngine Game Publish Tool
 
-SNEngine Game Publish Tool is an application for managing and publishing game information. The tool provides a convenient interface for viewing, editing, and exporting game data in JSON format.
+SNEngine Game Publish Tool is an application for managing and publishing game information. The tool provides a convenient interface for viewing, editing, and exporting game data.
 
 ![Preview](images/preview.png)
 
 ## Features
 
-- Opening JSON files with game information
+- Opening game files with game information
 - Viewing a list of games with platform icons
 - Adding, editing, and deleting games
 - Importing and exporting game data
@@ -29,9 +29,8 @@ pip install pyqt5 pyinstaller
 
 ```
 SNEngineGamePublishTool/
-├── mainwindow.py          # Main application window
+├── main.py                # Main application entry point
 ├── gamelist.py            # Game list window
-├── mainwindow.spec        # PyInstaller configuration for main window
 ├── gamelist.spec          # PyInstaller configuration for game list
 ├── icon.png               # Application icon
 ├── games_platforms/       # Platform icons
@@ -41,18 +40,13 @@ SNEngineGamePublishTool/
 │   ├── linux.png
 │   ├── macos.png
 │   ├── nintendo_switch.png
-│   └── playstation.png
+│   └── ...
 └── README.md              # Documentation (this file)
 ```
 
 ## Building Executables
 
-To create executable files, use the following commands:
-
-### Main Window (SNEngineGamePublisher.exe)
-```bash
-pyinstaller mainwindow.spec
-```
+To create executable files, use the following command:
 
 ### Game List Window (GamePublisher.exe)
 ```bash
@@ -63,11 +57,11 @@ Files will be created in the `dist/` folder.
 
 ## Usage
 
-1. Launch `SNEngineGamePublisher.exe`
-2. Click "Open JSON" to load a file with game information
+1. Launch the application
+2. Use "Import Games" to load a file with game information
 3. Use "Add Game", "Edit Game", "Delete Game" buttons to manage data
 4. Use "Import Binary" to import data from a binary file
-5. Use "Export JSON" to export all data to a JSON file
+5. Use "Export Games" to export all data to a game file
 
 ## Implementation Details
 

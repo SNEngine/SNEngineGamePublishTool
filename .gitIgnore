@@ -40,3 +40,4 @@ dist/
 temp_lang_data/
 
 src/session.json
+session.json
