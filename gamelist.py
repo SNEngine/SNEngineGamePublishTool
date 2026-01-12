@@ -286,7 +286,7 @@ class GameListWindow(QMainWindow):
         delete_btn.clicked.connect(self.delete_game)
         button_layout.addWidget(delete_btn)
 
-        import_btn = QPushButton("Import Binary")
+        import_btn = QPushButton("Import ZIP")
         import_btn.clicked.connect(self.import_game)
         button_layout.addWidget(import_btn)
 
@@ -629,9 +629,39 @@ class GameListWindow(QMainWindow):
             updated_game = dialog.get_game_data()
             # Сохраняем ID оригинальной игры
             updated_game['id'] = game['id']
+
+            # Check if preview image has changed and delete the old one
+            old_preview = game.get('preview', '')
+            new_preview = updated_game.get('preview', '')
+
             self.games[current_row] = updated_game
             self.save_games()
             self.populate_games_list()
+
+            # Delete the old preview image if it exists and it's different from the new one
+            if old_preview and new_preview and old_preview != new_preview and old_preview.startswith('images/'):
+                import os
+                # Construct the full path to the old image file
+                if self.file_path:
+                    json_dir = os.path.dirname(self.file_path)
+                    full_image_path = os.path.join(json_dir, old_preview)
+                else:
+                    # Try to get the last opened file from session
+                    last_file = get_last_opened_file()
+                    if last_file and os.path.exists(last_file):
+                        json_dir = os.path.dirname(last_file)
+                        full_image_path = os.path.join(json_dir, old_preview)
+                    else:
+                        # Use current directory as fallback
+                        full_image_path = old_preview
+
+                # Delete the old image file if it exists
+                if os.path.exists(full_image_path):
+                    try:
+                        os.remove(full_image_path)
+                        print(f"Deleted old preview image: {full_image_path}")
+                    except Exception as e:
+                        print(f"Could not delete old preview image {full_image_path}: {str(e)}")
 
     def delete_game(self):
         current_row = self.games_list.currentRow()
@@ -647,22 +677,163 @@ class GameListWindow(QMainWindow):
         )
 
         if reply == QMessageBox.Yes:
+            # Get the preview image path before deleting the game
+            preview_path = game.get('preview', '')
+
+            # Delete the game
             del self.games[current_row]
             self.save_games()
             self.populate_games_list()
             # Clear the details panel after deletion
             self.clear_details_panel()
 
+            # Delete the preview image from the images folder if it exists
+            if preview_path and preview_path.startswith('images/'):
+                import os
+                # Construct the full path to the image file
+                if self.file_path:
+                    json_dir = os.path.dirname(self.file_path)
+                    full_image_path = os.path.join(json_dir, preview_path)
+                else:
+                    # Try to get the last opened file from session
+                    last_file = get_last_opened_file()
+                    if last_file and os.path.exists(last_file):
+                        json_dir = os.path.dirname(last_file)
+                        full_image_path = os.path.join(json_dir, preview_path)
+                    else:
+                        # Use current directory as fallback
+                        full_image_path = preview_path
+
+                # Delete the image file if it exists
+                if os.path.exists(full_image_path):
+                    try:
+                        os.remove(full_image_path)
+                        print(f"Deleted preview image: {full_image_path}")
+                    except Exception as e:
+                        print(f"Could not delete preview image {full_image_path}: {str(e)}")
+
     def import_game(self):
-        """Import a game from a binary file"""
+        """Import a game from a binary file or ZIP archive"""
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Import Game Data", "", "Binary Files (*.bin);;All Files (*)"
+            self, "Import Game Data", "", "Game Files (*.zip *.bin);;ZIP Files (*.zip);;Binary Files (*.bin);;All Files (*)"
         )
 
         if file_path:
             try:
-                with open(file_path, 'rb') as f:
-                    game_data = pickle.load(f)
+                import zipfile
+                import pickle
+                import os
+                from datetime import datetime
+
+                # Check if it's a ZIP file
+                if file_path.lower().endswith('.zip'):
+                    # Get the parent window to access the current JSON file path
+                    parent_window = self.parent()
+                    # Use the current JSON file path from the parent window
+                    if parent_window and hasattr(parent_window, 'file_path') and parent_window.file_path:
+                        json_dir = os.path.dirname(parent_window.file_path)
+                        images_dir = os.path.join(json_dir, "images")
+                    else:
+                        # If no JSON file is currently loaded in parent, try to get the last opened file from session
+                        last_file = get_last_opened_file()
+                        if last_file and os.path.exists(last_file):
+                            json_dir = os.path.dirname(last_file)
+                            images_dir = os.path.join(json_dir, "images")
+                        else:
+                            # If no file path is available, use the current working directory
+                            images_dir = "images"
+
+                    with zipfile.ZipFile(file_path, 'r') as zipf:
+                        # Extract game data
+                        bin_data = zipf.read('gamedata.bin')
+                        game_data = pickle.loads(bin_data)
+
+                        # Look for image files in the ZIP
+                        image_files = [f for f in zipf.namelist() if f != 'gamedata.bin' and any(f.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp'])]
+
+                        if image_files:
+                            # Create images folder if it doesn't exist
+                            if not os.path.exists(images_dir):
+                                os.makedirs(images_dir)
+
+                            # Extract the first image file found
+                            image_name = image_files[0]
+                            image_data = zipf.read(image_name)
+
+                            # Generate a unique filename to avoid conflicts
+                            name, ext = os.path.splitext(image_name)
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                            unique_filename = f"{name}_{timestamp}{ext}"
+                            destination_path = os.path.join(images_dir, unique_filename)
+
+                            # Write the image to the images folder
+                            with open(destination_path, 'wb') as img_file:
+                                img_file.write(image_data)
+
+                            # Update the preview path in the game data to be relative to JSON file location
+                            game_data['preview'] = f"images/{unique_filename}"
+                        else:
+                            # If no image files found in ZIP, check if game_data already has a preview path
+                            # and if so, try to copy it to the images folder
+                            preview_path = game_data.get('preview', '')
+                            if preview_path and os.path.exists(preview_path):
+                                # Create images folder if it doesn't exist
+                                if not os.path.exists(images_dir):
+                                    os.makedirs(images_dir)
+
+                                # Generate a unique filename to avoid conflicts
+                                original_filename = os.path.basename(preview_path)
+                                name, ext = os.path.splitext(original_filename)
+                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                                unique_filename = f"{name}_{timestamp}{ext}"
+                                destination_path = os.path.join(images_dir, unique_filename)
+
+                                # Copy the image to the images folder
+                                import shutil
+                                shutil.copy2(preview_path, destination_path)
+
+                                # Update the preview path in the game data to be relative to JSON file location
+                                game_data['preview'] = f"images/{unique_filename}"
+                else:
+                    # Handle legacy binary file import
+                    with open(file_path, 'rb') as f:
+                        game_data = pickle.load(f)
+
+                    # If the preview path exists and points to an image file, copy it to images folder
+                    preview_path = game_data.get('preview', '')
+                    if preview_path and os.path.exists(preview_path):
+                        # Determine where to create the images folder based on parent window's file path
+                        parent_window = self.parent()
+                        if parent_window and hasattr(parent_window, 'file_path') and parent_window.file_path:
+                            json_dir = os.path.dirname(parent_window.file_path)
+                            images_dir = os.path.join(json_dir, "images")
+                        else:
+                            # If no JSON file is currently loaded in parent, try to get the last opened file from session
+                            last_file = get_last_opened_file()
+                            if last_file and os.path.exists(last_file):
+                                json_dir = os.path.dirname(last_file)
+                                images_dir = os.path.join(json_dir, "images")
+                            else:
+                                # If no file path is available, use the current working directory
+                                images_dir = "images"
+
+                        # Create images folder if it doesn't exist
+                        if not os.path.exists(images_dir):
+                            os.makedirs(images_dir)
+
+                        # Generate a unique filename to avoid conflicts
+                        original_filename = os.path.basename(preview_path)
+                        name, ext = os.path.splitext(original_filename)
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                        unique_filename = f"{name}_{timestamp}{ext}"
+                        destination_path = os.path.join(images_dir, unique_filename)
+
+                        # Copy the image to the images folder
+                        import shutil
+                        shutil.copy2(preview_path, destination_path)
+
+                        # Update the preview path in the game data to be relative to JSON file location
+                        game_data['preview'] = f"images/{unique_filename}"
 
                 # Добавляем ID к импортированной игре
                 if self.games:
@@ -700,19 +871,119 @@ class GameListWindow(QMainWindow):
                 QMessageBox.critical(self, "Error", f"Failed to export games:\n{str(e)}")
 
     def import_games_json(self):
-        """Import games from a file"""
+        """Import games from a JSON file or ZIP archive"""
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Import Games", "", "Game Files (*.json);;All Files (*)"
+            self, "Import Games", "", "Game Files (*.json *.zip);;JSON Files (*.json);;ZIP Files (*.zip);;All Files (*)"
         )
 
         if file_path:
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    imported_games = json.load(f)
+                import zipfile
+                import pickle
+                import os
+                from datetime import datetime
 
-                # Validate that the imported data is a list of games
-                if not isinstance(imported_games, list):
-                    raise ValueError("JSON file must contain an array of games")
+                # Check if it's a ZIP file
+                if file_path.lower().endswith('.zip'):
+                    imported_games = []
+
+                    # Use the current JSON file path from this window
+                    if self.file_path:
+                        json_dir = os.path.dirname(self.file_path)
+                        images_dir = os.path.join(json_dir, "images")
+                    else:
+                        # If no JSON file is currently loaded in this window, try to get the last opened file from session
+                        last_file = get_last_opened_file()
+                        if last_file and os.path.exists(last_file):
+                            json_dir = os.path.dirname(last_file)
+                            images_dir = os.path.join(json_dir, "images")
+                        else:
+                            # If no file path is available, use the current working directory
+                            images_dir = "images"
+
+                    with zipfile.ZipFile(file_path, 'r') as zipf:
+                        # Look for JSON files or game data in the ZIP
+                        json_files = [f for f in zipf.namelist() if f.endswith('.json')]
+
+                        if json_files:
+                            # If there are JSON files, import from the first one
+                            json_content = zipf.read(json_files[0])
+                            imported_games = json.loads(json_content.decode('utf-8'))
+
+                            # If the imported data is a single game object, wrap it in a list
+                            if isinstance(imported_games, dict):
+                                imported_games = [imported_games]
+                        else:
+                            # Look for binary game data files
+                            bin_files = [f for f in zipf.namelist() if f.endswith('.bin')]
+
+                            if bin_files:
+                                # Import from binary file
+                                bin_content = zipf.read(bin_files[0])
+                                game_data = pickle.loads(bin_content)
+
+                                # Look for image files in the ZIP to handle preview
+                                image_files = [f for f in zipf.namelist() if f != bin_files[0] and any(f.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp'])]
+
+                                if image_files:
+                                    # Create images folder relative to the JSON file location
+                                    if not os.path.exists(images_dir):
+                                        os.makedirs(images_dir)
+
+                                    # Extract the first image file found
+                                    image_name = image_files[0]
+                                    image_data = zipf.read(image_name)
+
+                                    # Generate a unique filename to avoid conflicts
+                                    name, ext = os.path.splitext(image_name)
+                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                                    unique_filename = f"{name}_{timestamp}{ext}"
+                                    destination_path = os.path.join(images_dir, unique_filename)
+
+                                    # Write the image to the images folder
+                                    with open(destination_path, 'wb') as img_file:
+                                        img_file.write(image_data)
+
+                                    # Update the preview path in the game data to be relative to JSON file location
+                                    game_data['preview'] = f"images/{unique_filename}"
+                                else:
+                                    # If no image files found in ZIP, check if game_data already has a preview path
+                                    # and if so, try to copy it to the images folder
+                                    preview_path = game_data.get('preview', '')
+                                    if preview_path and os.path.exists(preview_path):
+                                        # Create images folder relative to the JSON file location
+                                        if not os.path.exists(images_dir):
+                                            os.makedirs(images_dir)
+
+                                        # Generate a unique filename to avoid conflicts
+                                        original_filename = os.path.basename(preview_path)
+                                        name, ext = os.path.splitext(original_filename)
+                                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                                        unique_filename = f"{name}_{timestamp}{ext}"
+                                        destination_path = os.path.join(images_dir, unique_filename)
+
+                                        # Copy the image to the images folder
+                                        import shutil
+                                        shutil.copy2(preview_path, destination_path)
+
+                                        # Update the preview path in the game data to be relative to JSON file location
+                                        game_data['preview'] = f"images/{unique_filename}"
+
+                                imported_games = [game_data]
+                            else:
+                                raise ValueError("No supported game data files found in the ZIP archive")
+                else:
+                    # Handle JSON file import
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        imported_games = json.load(f)
+
+                    # Validate that the imported data is a list of games
+                    if not isinstance(imported_games, list):
+                        # If it's a single game object, wrap it in a list
+                        if isinstance(imported_games, dict):
+                            imported_games = [imported_games]
+                        else:
+                            raise ValueError("JSON file must contain an array of games or a single game object")
 
                 # If the current list is empty, just replace without asking
                 if not self.games:
@@ -747,6 +1018,41 @@ class GameListWindow(QMainWindow):
                         set_last_opened_file(self.file_path)  # Save to session when replacing
                     elif reply == QMessageBox.Cancel:
                         return
+
+                # Handle preview images for imported games (if they exist outside images/ folder)
+                for game in self.games:
+                    preview_path = game.get('preview', '')
+                    if preview_path and os.path.exists(preview_path) and not preview_path.startswith('images/'):
+                        # Create images folder relative to the JSON file location
+                        if self.file_path:
+                            json_dir = os.path.dirname(self.file_path)
+                            images_dir = os.path.join(json_dir, "images")
+                        else:
+                            # If no JSON file is currently loaded in this window, try to get the last opened file from session
+                            last_file = get_last_opened_file()
+                            if last_file and os.path.exists(last_file):
+                                json_dir = os.path.dirname(last_file)
+                                images_dir = os.path.join(json_dir, "images")
+                            else:
+                                # If no file path is available, use the current working directory
+                                images_dir = "images"
+
+                        if not os.path.exists(images_dir):
+                            os.makedirs(images_dir)
+
+                        # Generate a unique filename to avoid conflicts
+                        original_filename = os.path.basename(preview_path)
+                        name, ext = os.path.splitext(original_filename)
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                        unique_filename = f"{name}_{timestamp}{ext}"
+                        destination_path = os.path.join(images_dir, unique_filename)
+
+                        # Copy the image to the images folder
+                        import shutil
+                        shutil.copy2(preview_path, destination_path)
+
+                        # Update the preview path in the game data to be relative to JSON file
+                        game['preview'] = f"images/{unique_filename}"
 
                 self.save_games()
                 self.populate_games_list()
@@ -1008,43 +1314,74 @@ class GameEditDialog(QDialog):
             self, "Select Preview Image", "", "Image Files (*.png *.jpg *.jpeg *.gif *.bmp)"
         )
         if file_path:
-            # Пытаемся получить относительный путь от директории JSON файла
-            try:
-                import os
-                parent_window = self.parent()
-                if hasattr(parent_window, 'file_path') and parent_window.file_path:
-                    json_dir = os.path.dirname(parent_window.file_path)  # Получаем директорию JSON файла
-                    relative_path = os.path.relpath(file_path, json_dir)
-                    # Заменяем обратные слэши на прямые для JSON
-                    relative_path = relative_path.replace('\\', '/')
-                    self.preview_input.setText(relative_path)
+            import os
+            import shutil
+            from datetime import datetime
+
+            # Determine where to create the images folder based on parent window's file path
+            parent_window = self.parent()
+            if parent_window and hasattr(parent_window, 'file_path') and parent_window.file_path:
+                json_dir = os.path.dirname(parent_window.file_path)
+                images_dir = os.path.join(json_dir, "images")
+            else:
+                # If no JSON file is currently loaded in parent, try to get the last opened file from session
+                last_file = get_last_opened_file()
+                if last_file and os.path.exists(last_file):
+                    json_dir = os.path.dirname(last_file)
+                    images_dir = os.path.join(json_dir, "images")
                 else:
-                    # Если у родительского окна нет пути к файлу, используем абсолютный путь
-                    # Заменяем обратные слэши на прямые для JSON
-                    file_path = file_path.replace('\\', '/')
-                    self.preview_input.setText(file_path)
-            except:
-                # Если не удалось получить относительный путь, используем абсолютный
-                # Заменяем обратные слэши на прямые для JSON
-                file_path = file_path.replace('\\', '/')
-                self.preview_input.setText(file_path)
+                    # If no file path is available, use the current working directory
+                    images_dir = "images"
+
+            # Create images folder if it doesn't exist
+            if not os.path.exists(images_dir):
+                os.makedirs(images_dir)
+
+            # Get the filename from the selected path
+            original_filename = os.path.basename(file_path)
+            name, ext = os.path.splitext(original_filename)
+
+            # Generate a unique filename to avoid conflicts
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            unique_filename = f"{name}_{timestamp}{ext}"
+            destination_path = os.path.join(images_dir, unique_filename)
+
+            # Copy the image to the images folder
+            shutil.copy2(file_path, destination_path)
+
+            # Set the preview input to the relative path starting with "images/"
+            relative_path = f"images/{unique_filename}"
+            self.preview_input.setText(relative_path)
 
     def export_game(self):
-        """Export the current game data to a binary file"""
+        """Export the current game data as a ZIP archive containing binary and preview image"""
         import pickle
+        import zipfile
+        import os
+        from datetime import datetime
+
         game_data = self.get_game_data()
 
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Export Game Data", "", "Binary Files (*.bin);;All Files (*)"
+        # Ask user for ZIP file location
+        zip_path, _ = QFileDialog.getSaveFileName(
+            self, "Export Game Data as ZIP", "", "ZIP Files (*.zip);;All Files (*)"
         )
 
-        if file_path:
+        if zip_path:
             try:
-                with open(file_path, 'wb') as f:
-                    pickle.dump(game_data, f)
-                QMessageBox.information(self, "Success", "Game data exported successfully!")
+                with zipfile.ZipFile(zip_path, 'w') as zipf:
+                    # Add the game data as a binary file
+                    bin_data = pickle.dumps(game_data)
+                    zipf.writestr('gamedata.bin', bin_data)
+
+                    # Add the preview image if it exists
+                    preview_path = game_data.get('preview', '')
+                    if preview_path and os.path.exists(preview_path):
+                        zipf.write(preview_path, os.path.basename(preview_path))
+
+                QMessageBox.information(self, "Success", "Game data exported as ZIP successfully!")
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to export game data:\n{str(e)}")
+                QMessageBox.critical(self, "Error", f"Failed to export game data as ZIP:\n{str(e)}")
 
     def get_game_data(self):
         return {
