@@ -1,38 +1,38 @@
 # SNEngine Game Publish Tool
 
-SNEngine Game Publish Tool — это приложение для управления и публикации информации о играх. Инструмент предоставляет удобный интерфейс для просмотра, редактирования и экспорта данных об играх в формате JSON.
+SNEngine Game Publish Tool is an application for managing and publishing game information. The tool provides a convenient interface for viewing, editing, and exporting game data in JSON format.
 
-## Функциональность
+## Features
 
-- Открытие JSON-файлов с информацией об играх
-- Просмотр списка игр с иконками платформ
-- Добавление, редактирование и удаление игр
-- Импорт и экспорт данных об играх
-- Поддержка нескольких языков (EN/RU)
-- Поддержка различных платформ (Windows, macOS, Linux, Android, iOS и др.)
+- Opening JSON files with game information
+- Viewing a list of games with platform icons
+- Adding, editing, and deleting games
+- Importing and exporting game data
+- Multi-language support (EN/RU)
+- Support for various platforms (Windows, macOS, Linux, Android, iOS, etc.)
 
-## Требования
+## Requirements
 
 - Python 3.6+
 - PyQt5
-- PyInstaller (для сборки исполняемых файлов)
+- PyInstaller (for building executables)
 
-## Установка зависимостей
+## Installing Dependencies
 
 ```bash
 pip install pyqt5 pyinstaller
 ```
 
-## Структура проекта
+## Project Structure
 
 ```
 SNEngineGamePublishTool/
-├── mainwindow.py          # Главное окно приложения
-├── gamelist.py            # Окно со списком игр
-├── mainwindow.spec        # Конфигурация PyInstaller для главного окна
-├── gamelist.spec          # Конфигурация PyInstaller для списка игр
-├── icon.png               # Иконка приложения
-├── games_platforms/       # Иконки платформ
+├── mainwindow.py          # Main application window
+├── gamelist.py            # Game list window
+├── mainwindow.spec        # PyInstaller configuration for main window
+├── gamelist.spec          # PyInstaller configuration for game list
+├── icon.png               # Application icon
+├── games_platforms/       # Platform icons
 │   ├── android.png
 │   ├── browser.png
 │   ├── ios.png
@@ -40,46 +40,46 @@ SNEngineGamePublishTool/
 │   ├── macos.png
 │   ├── nintendo_switch.png
 │   └── playstation.png
-└── README.md              # Документация (этот файл)
+└── README.md              # Documentation (this file)
 ```
 
-## Сборка исполняемых файлов
+## Building Executables
 
-Для создания исполняемых файлов используйте следующие команды:
+To create executable files, use the following commands:
 
-### Главное окно (SNEngineGamePublisher.exe)
+### Main Window (SNEngineGamePublisher.exe)
 ```bash
 pyinstaller mainwindow.spec
 ```
 
-### Окно списка игр (GamePublisher.exe)
+### Game List Window (GamePublisher.exe)
 ```bash
 pyinstaller gamelist.spec
 ```
 
-Файлы будут созданы в папке `dist/`.
+Files will be created in the `dist/` folder.
 
-## Использование
+## Usage
 
-1. Запустите `SNEngineGamePublisher.exe`
-2. Нажмите "Open JSON" для загрузки файла с информацией об играх
-3. Используйте кнопки "Add Game", "Edit Game", "Delete Game" для управления данными
-4. Используйте "Import Binary" для импорта данных из бинарного файла
-5. Используйте "Export JSON" для экспорта всех данных в JSON-файл
+1. Launch `SNEngineGamePublisher.exe`
+2. Click "Open JSON" to load a file with game information
+3. Use "Add Game", "Edit Game", "Delete Game" buttons to manage data
+4. Use "Import Binary" to import data from a binary file
+5. Use "Export JSON" to export all data to a JSON file
 
-## Особенности реализации
+## Implementation Details
 
-- Приложение использует темную тему интерфейса
-- Иконки платформ отображаются в списке игр
-- Поддержка статусов игр (released, in-development, pre-release, planned, cancelled, beta)
-- Поддержка предварительных изображений игр
-- Поддержка многоязычности (EN/RU)
+- The application uses a dark theme interface
+- Platform icons are displayed in the game list
+- Support for game statuses (released, in-development, pre-release, planned, cancelled, beta)
+- Support for game preview images
+- Multi-language support (EN/RU)
 
-## Известные особенности
+## Known Issues
 
-- Для корректного отображения иконок в исполняемых файлах используется `sys._MEIPASS` для доступа к ресурсам
-- Для корректного отображения иконки на панели задач Windows используется `SetCurrentProcessExplicitAppUserModelID`
+- To correctly display icons in executables, `sys._MEIPASS` is used to access resources
+- To correctly display the taskbar icon in Windows, `SetCurrentProcessExplicitAppUserModelID` is used
 
-## Лицензия
+## License
 
-Проект распространяется без лицензии.
+The project is distributed without a license.
