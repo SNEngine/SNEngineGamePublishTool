@@ -2,6 +2,8 @@
 
 SNEngine Game Publish Tool is an application for managing and publishing game information. The tool provides a convenient interface for viewing, editing, and exporting game data in JSON format.
 
+![Preview](images/preview.png)
+
 ## Features
 
 - Opening JSON files with game information
